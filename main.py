@@ -664,7 +664,7 @@ def custom_nodes(
 def asset_groups(
     info_type: str = "list",
     asset_group_id: str = None,
-    asst_group_tag_id: int = None,
+    asset_group_tag_id: int = None,
     name: str = None,
     tag: str = None,
     sort_by: str = None,
@@ -725,7 +725,7 @@ def asset_groups(
     }
     return _handle_tool_call(info_type, handlers)
 
-    
+
                              
 
 
