@@ -37,8 +37,8 @@ bloodhound_api = BloodhoundAPI()
 # eliminates repitiver error handling boilerplate that was in all of the tools.
 def _handle_tool_call(info_type: str, handlers: dict, **context):
     """Dispatch a composite tool call to the appropriate handler"""
-    handler = handler.get(info_type)
-    if not handlers:
+    handler = handlers.get(info_type)
+    if not handler:
         valid = ", ".join(sorted(handlers.keys()))
         return json.dumps({
             "error": f"Unknown info_type '{info_type}'. Valid options: {valid}"
@@ -48,7 +48,7 @@ def _handle_tool_call(info_type: str, handlers: dict, **context):
         return json.dumps({
             "info_type": info_type,
             "data": result,
-            **context 
+            **context
         })
     except BloodhoundConnectionError as e:
         return json.dumps({"error": f"Connection error: {str(e)}"})
@@ -56,6 +56,7 @@ def _handle_tool_call(info_type: str, handlers: dict, **context):
         return json.dumps({"error": f"API error: (HTTP {e.status_code}) {str(e)}"})
     except Exception as e:
         logger.error(f"Error in {info_type}: {str(e)}")
+        return json.dumps({"error": f"Unexpected error in {info_type}: {str(e)}"})
     
 #Create the prompts
 #Slimmed down prompt with instructuons to use resources for more information
@@ -129,8 +130,6 @@ def domain_info(
         foreign_users - users referenced across domains
         inbound_trusts - domains that trust this domain
         outbound_trusts - domains this domain trusts
-        linked_gpos - GPOs linked to domain containers
-    
     Args:
         info_type: what to retrieve (default: list)
         domain_id: Domain object ID (required for most info_types)
@@ -155,7 +154,6 @@ def domain_info(
         "foreign_users":           lambda: bloodhound_api.domains.get_foreign_users(domain_id, limit=limit, skip=skip),
         "inbound_trusts":          lambda: bloodhound_api.domains.get_inbound_trusts(domain_id, limit=limit, skip=skip),
         "outbound_trusts":         lambda: bloodhound_api.domains.get_outbound_trusts(domain_id, limit=limit, skip=skip),
-        "linked_gpos":             lambda: bloodhound_api.domains.get_linked_gpos(domain_id, limit=limit, skip=skip),
     }
     return _handle_tool_call(info_type, handlers)
 
@@ -191,7 +189,7 @@ def user_info(
     handlers = {
         "info":                   lambda: bloodhound_api.users.get_info(user_id),
         "admin_rights":           lambda: bloodhound_api.users.get_admin_rights(user_id, limit=limit, skip=skip),
-        "constrained_delegation": lambda: bloodhound_api.users.get_constrained_delegation(user_id, limit=limit, skip=skip),
+        "constrained_delegation": lambda: bloodhound_api.users.get_constrained_delegation_rights(user_id, limit=limit, skip=skip),
         "controllables":          lambda: bloodhound_api.users.get_controllables(user_id, limit=limit, skip=skip),
         "controllers":            lambda: bloodhound_api.users.get_controllers(user_id, limit=limit, skip=skip),
         "dcom_rights":           lambda: bloodhound_api.users.get_dcom_rights(user_id, limit=limit, skip=skip),
@@ -280,7 +278,7 @@ def computer_info(
         "info":                   lambda: bloodhound_api.computers.get_info(computer_id),
         "admin_rights":           lambda: bloodhound_api.computers.get_admin_rights(computer_id, limit=limit, skip=skip),
         "admin_users":            lambda: bloodhound_api.computers.get_admin_users(computer_id, limit=limit, skip=skip),
-        "constrained_delegation": lambda: bloodhound_api.computers.get_constrained_delegation(computer_id, limit=limit, skip=skip),
+        "constrained_delegation": lambda: bloodhound_api.computers.get_constrained_delegation_rights(computer_id, limit=limit, skip=skip),
         "constrained_users":      lambda: bloodhound_api.computers.get_constrained_users(computer_id, limit=limit, skip=skip),
         "controllables":          lambda: bloodhound_api.computers.get_controllables(computer_id, limit=limit, skip=skip),
         "controllers":            lambda: bloodhound_api.computers.get_controllers(computer_id, limit=limit, skip=skip),
@@ -374,7 +372,7 @@ def graph_analysis(
     """Perform graph analysis operations in BloodHound
     
     info_type options:
-        search - search for nodes by name (needs: queryl optional: search_type)
+        search - search for nodes by name (needs: query; optional: search_type)
         shortest_path - find shortest attack path between two nodes (needs: start_node, end_node; optional relationship_kinds)
         edge_composition - decompose a complex edge into underlying relationships (needs: source_node, target_node, edge_type)
         relay_targets - find valid NTLM relay targets for a given node (needs: source_node, target_node, edge_type)
@@ -391,10 +389,10 @@ def graph_analysis(
         relationship_kinds: Comma-separated relationship filter (for shortest_path, optional)
     """
     handlers = {
-        "search":            lambda: bloodhound_api.cypher.search_nodes(query, search_type),
-        "shortest_path":     lambda: bloodhound_api.cypher.shortest_path(start_node, end_node, relationship_kinds),
-        "edge_composition":  lambda: bloodhound_api.cypher.edge_composition(source_node, target_node, edge_type),
-        "relay_targets":     lambda: bloodhound_api.cypher.relay_targets(source_node, target_node, edge_type),
+        "search":            lambda: bloodhound_api.graph.search(query, search_type),
+        "shortest_path":     lambda: bloodhound_api.graph.get_shortest_path(start_node, end_node, relationship_kinds),
+        "edge_composition":  lambda: bloodhound_api.graph.get_edge_composition(source_node, target_node, edge_type),
+        "relay_targets":     lambda: bloodhound_api.graph.get_relay_targets(source_node, target_node, edge_type),
     }
     return _handle_tool_call(info_type, handlers, query=query, search_type=search_type, start_node=start_node, end_node=end_node, source_node=source_node, target_node=target_node, edge_type=edge_type, relationship_kinds=relationship_kinds)
 
@@ -495,6 +493,8 @@ def cypher_query(
         "validate": lambda: bloodhound_api.cypher.validate_query(query),
     }
     return _handle_tool_call(info_type, handlers)
+
+
 def _cypher_run(query: str, include_properties: bool = True) -> str:
     """Execute a Cypher query with proper HTTP Status interpretation"""
     try:
@@ -504,7 +504,8 @@ def _cypher_run(query: str, include_properties: bool = True) -> str:
             has_results = result["metadata"].get("has_result", True)
             result_data = result.get("data", result)
         else:
-            result_data = resulthas_result = bool(result_data.get("nodes") or result_data.get("edges"))
+            result_data = result
+            has_results = bool(result_data.get("nodes") or result_data.get("edges"))
         return json.dumps({
             "info_type": "run",
             "success": True,
@@ -544,17 +545,6 @@ def _cypher_interpret(query: str, result_json: str) -> str:
             })
         nodes = result.get("data", {}).get("nodes", [])
         edges = result.get("data", {}).get("edges", [])
-        query_lower = query.lower()
-
-        #not sure if this is necessary going to comment it all out
-        #if "domain admin" in query_lower:
-        #    interpretation = f"Found {len(nodes)} Domain Admin related objects" if nodes else "No Domain Admin Relationships found"
-        #elif "kerberoast" in query_lower:
-        #    interpretation = f"Found {len(nodes)} Kerberoastable accounts" if nodes else "No Kerberoastable accounts found"
-        #elif "shortest path" in query_lower or "all paths" in query_lower:
-        #    interpretation = f"Found {len(edges)} potential attack paths between the specified nodes" if edges else "No attack paths found between the specified nodes"
-        #else:
-        #    interpretation = f"Query returned {len(nodes)} nodes and {len(edges)} edges. Review the results for potential security insights."
         return json.dumps({
             "info_type": "interpret",
             "nodes_found": len(nodes),
@@ -644,23 +634,23 @@ def custom_nodes(
                 validation = bloodhound_api.custom_nodes.validate_icon_config(config["icon"])
                 if not validation["valid"]:
                     return {"error": f"Invalid icon config for {name}: {validation['error']}"}
-        return bloodhound_api.custom_nodes.create_custom_node_kinds(types)
+        return bloodhound_api.custom_nodes.create_custom_nodes(types)
     def _update():
         config = json.loads(config_json)
         if "icon" in config:
             validation = bloodhound_api.custom_nodes.validate_icon_config(config["icon"])
             if not validation["valid"]:
                 return {"error": f"Invalid icon config: {validation['error']}"}
-        return bloodhound_api.custom_nodes.update_custom_node_kind(kind_name, config)
+        return bloodhound_api.custom_nodes.update_custom_node(kind_name, config)
     def _validate_icon():
         icon = json.loads(icon_config_json)
         return bloodhound_api.custom_nodes.validate_icon_config(icon)
     handlers = {
-        "list": lambda: bloodhound_api.custom_nodes.list_custom_node_kinds(),
-        "get": lambda: bloodhound_api.custom_nodes.get_custom_node_kind(kind_name),
+        "list": lambda: bloodhound_api.custom_nodes.get_all_custom_nodes(),
+        "get": lambda: bloodhound_api.custom_nodes.get_custom_node(kind_name),
         "create": _create,
         "update": _update,
-        "delete": lambda: bloodhound_api.custom_nodes.delete_custom_node_kind(kind_name),
+        "delete": lambda: bloodhound_api.custom_nodes.delete_custom_node(kind_name),
         "validate_icon": _validate_icon,
     }
     return _handle_tool_call(info_type, handlers)
@@ -1464,7 +1454,7 @@ def opengraph_examples() -> str:
     """
 
 
-
-
+if __name__ == "__main__":
+    mcp.run()
 
 
