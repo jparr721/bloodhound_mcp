@@ -81,15 +81,21 @@ def bloodhound_assistant() -> str:
     6. For OpenGraph: prompt the user for OpenGraph Schema and example queries, then use these to create cypher queries
 
     ## Resources
-    Load these for detailed references:
-    - bloodhound://cypher/examples - query examples
-    - bloodhound://cypher/patterns - common cypher patterns
-    - bloodhound://ad/analysis-guide - AD analysis methodology
-    - bloodhound://azure/analysis-guide - Azure-specific patterns
-    - bloodhound://adcs/attack-guide - ADCS attack vectors (ESC1-ESC13)
-    - bloodhound://custom-nodes/opengraph-guide - OpenGraph schema design
-    - bloodhound://custom-nodes/examples - Custom node implementation
+    Quick reference (load as needed):
+    - bloodhound://cypher/reference — Cypher syntax, patterns, examples, and GUI caveats
+    - bloodhound://guides/ad — AD node types, relationships, tool workflow
+    - bloodhound://guides/azure — Azure/Entra analysis quick reference
+    - bloodhound://guides/adcs — ADCS ESC1-ESC13 quick reference
 
+    Deep methodology (load for in-depth analysis):
+    - bloodhound://guides/ad-methodology — Full AD attack patterns and workflow
+    - bloodhound://guides/azure-methodology — Full Azure attack chains
+    - bloodhound://guides/adcs-methodology — Detailed ESC analysis and exploitation
+
+    OpenGraph (load when working with custom nodes):
+    - bloodhound://opengraph/guide — Custom node schema design and best practices
+    - bloodhound://opengraph/examples — SQL Server and Web App implementation examples
+    
     Each tool's info_type parameter controls what data is retrieved.
 """
 
@@ -725,17 +731,740 @@ def asset_groups(
     }
     return _handle_tool_call(info_type, handlers)
 
+# MCP Resources
+#These are called by the main prompt
+# Cypher References
+@mcp.resource("bloodhound://cypher/reference")
+def cypher_reference() -> str:
+    """Cypher query sintax, patterns, and examples for BloodHound"""
+    return """BloodHound Cypher Reference
+    ============================
+    Syntax Basics
+    -------------
+    - Nodes: (n:NodeType) or (n:NodeType {property: 'value'})
+    - Relationships: -[r:REL_TYPE]-> (directed) or -[r:REL_TYPE*1..]->(variable length)
+    - Patterns chain nodes and relationships: (a)-[r]->(b)
+    - MATCH finds patterns, WHERE filters, RETURN outputs results
+    - shortestPath((a)-[*1..]->(b)) finds the most direct path
+    - Use *1..N to limit path length (e.g., *1..5 for max 5 hops)
 
-                             
+    GUI vs API Limitation
+    ---------------------
+    COUNT and other aggregation functions (COLLECT, SUM, AVG) work correctly
+    when executed via the cypher_query tool (API). However, the BloodHound GUI
+    does NOT render aggregation results properly. When suggesting queries for
+    the user to run manually in the GUI, return individual results instead:
+    GUI-safe:  MATCH (u:User) WHERE u.hasspn=true RETURN u
+    API-only:  MATCH (u:User) WHERE u.hasspn=true RETURN count(u)
+
+    Query Size Limits
+    -----------------
+    A 500 error from the BloodHound API often means the query returned too much data. To avoid this, use pagination and filtering techniques:
+    1. Add LIMIT to constrain result size: RETURN p LIMIT 100
+    2. Use SKIP for pagination: RETURN p SKIP 100 LIMIT 100
+    3. Chain paginated calls to build the full result set
+    4. Add WHERE filters to narrow scope before pagination
+
+  Example — paginated path query:
+    Page 1: MATCH p=(n)-[:MemberOf*1..]->(g:Group) RETURN p LIMIT 100
+    Page 2: MATCH p=(n)-[:MemberOf*1..]->(g:Group) RETURN p SKIP 100 LIMIT 100
+
+    Node Types
+    ----------
+    Active Directory:
+    User, Computer, Group, Domain, OU, GPO, Container,
+    CertTemplate, RootCA, EnterpriseCA, AIACA, NTAuthStore
+
+    Azure / Entra ID:
+    AZUser, AZGroup, AZApp, AZServicePrincipal, AZTenant,
+    AZDevice, AZRole, AZSubscription, AZResourceGroup,
+    AZManagementGroup, AZKeyVault
+
+    Custom (OpenGraph):
+    User-defined types (e.g., SQLServer, WebApp, NetworkDevice)
+
+    AD Relationship Types
+    ---------------------
+    - MemberOf: Group membership
+    - AdminTo: Local admin rights
+    - HasSession: Active logon session
+    - GenericAll: Full control
+    - GenericWrite: Write access to attributes
+    - WriteOwner / WriteDacl: ACL modification
+    - ForceChangePassword: Password reset
+    - AddMember: Add to group
+    - DCSync: GetChanges + GetChangesAll (domain replication)
+    - Owns: Object owner
+    - AllExtendedRights: All extended permissions
+    - CanRDP / CanPSRemote / ExecuteDCOM: Remote access methods
+    - AllowedToDelegate: Kerberos constrained delegation
+    - AllowedToAct: Resource-based constrained delegation
+    - ReadLAPSPassword / ReadGMSAPassword: Credential access
+    - SQLAdmin: SQL Server admin
+    - HasSIDHistory: SID History abuse
+    - AddKeyCredentialLink: Shadow Credentials
+    - WriteSPN: SPN manipulation (targeted Kerberoasting)
+    - GPLink: GPO linked to container
+    - Contains: OU/container membership
+    - TrustedBy: Domain trust
+    - CoerceToTGT: Kerberos coercion
+    - ADCSESC1/ESC3/ESC4/ESC6a/ESC6b/ESC9a/ESC9b/ESC10a/ESC10b/ESC13: ADCS abuse edges
+    - GoldenCert: Golden certificate attack
+    - CoerceAndRelayNTLMToSMB/ADCS/LDAP/LDAPS: NTLM relay paths
+
+    Azure Relationship Types
+    ------------------------
+    - AZGlobalAdmin: Global Administrator role
+    - AZPrivilegedRoleAdmin: Privileged Role Administrator
+    - AZApplicationAdministrator / AZCloudApplicationAdministrator
+    - AZResetPassword: Can reset passwords
+    - AZOwns: Owns the object
+    - AZExecuteCommand: Can execute commands
+    - AZAddMembers: Can add group members
+    - AZGrantAccess: Can grant access
+
+    Common Patterns
+    ---------------
+    Find members of a group:
+    MATCH (n)-[:MemberOf*1..]->(g:Group {name:"DOMAIN ADMINS@DOMAIN.COM"})
+    RETURN n
+
+    Shortest attack path:
+    MATCH p=shortestPath((s)-[*1..]->(t))
+    WHERE s.objectid = 'source-id' AND t.objectid = 'target-id'
+    RETURN p
+
+    All paths within N hops:
+    MATCH p=(s)-[*1..5]->(t:Group {name:"DOMAIN ADMINS@DOMAIN.COM"})
+    RETURN p
+
+    Permission count per object:
+    MATCH (obj)-[r]->(target)
+    WITH obj, count(r) as perm_count
+    RETURN obj.name, perm_count
+    ORDER BY perm_count DESC
+
+    Example Queries
+    ---------------
+    Find all Domain Admins:
+    MATCH p=(n)-[:MemberOf*1..]->(g:Group {name:"DOMAIN ADMINS@DOMAIN.COM"})
+    RETURN p
+
+    Find Kerberoastable users:
+    MATCH (u:User)
+    WHERE u.hasspn=true AND u.enabled=true
+    AND NOT u.objectid ENDS WITH '-502'
+    AND NOT COALESCE(u.gmsa, false) = true
+    AND NOT COALESCE(u.msa, false) = true
+    RETURN u
+
+    Find paths from owned principals to high-value targets:
+    MATCH p=shortestPath((s:Base)-[:Owns|GenericAll|GenericWrite|WriteOwner|WriteDacl|MemberOf|ForceChangePassword|AllExtendedRights|AddMember|HasSession|GPLink|AllowedToDelegate|CoerceToTGT|AllowedToAct|AdminTo|CanPSRemote|CanRDP|ExecuteDCOM|HasSIDHistory|AddSelf|DCSync|ReadLAPSPassword|ReadGMSAPassword|DumpSMSAPassword|SQLAdmin|AddAllowedToAct|WriteSPN|AddKeyCredentialLink|SyncLAPSPassword|WriteAccountRestrictions|WriteGPLink|GoldenCert|ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|SyncedToEntraUser|CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS|Contains|DCFor|TrustedBy*1..]->(t:Base))
+    WHERE COALESCE(s.system_tags, '') CONTAINS 'owned' AND s<>t
+    RETURN p
+
+    Find Azure Global Admins:
+    MATCH p=(:AZBase)-[:AZGlobalAdmin*1..]->(:AZTenant)
+    RETURN p
+
+    Find Azure users with admin roles:
+    MATCH p=(u:AZUser)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin]->(t:AZTenant)
+    RETURN u.displayname, u.objectid, type(r) as role_type
+
+    Find Azure users with most permissions:
+    MATCH (u:AZUser)
+    OPTIONAL MATCH (u)-[r]->(t)
+    WITH u, count(r) as num_permissions
+    RETURN u.displayname, num_permissions
+    ORDER BY num_permissions DESC LIMIT 10
+    """
+# Active Directory Resource
+@mcp.resource("bloodhound://guides/ad")
+def ad_guide() -> str:
+    """Active Directory analysis quick reference for BloodHound."""
+    return """AD Analysis Quick Reference
+    ==========================
+
+    Node Types
+    ----------
+    User       — AD user accounts
+    Computer   — Domain-joined machines
+    Group      — Security and distribution groups
+    Domain     — AD domain objects
+    OU         — Organizational Units
+    GPO        — Group Policy Objects
+    Container  — AD containers
+
+    Key Relationships
+    -----------------
+    Privilege:    AdminTo, GenericAll, GenericWrite, WriteOwner, WriteDacl, Owns
+    Membership:   MemberOf, Contains, GPLink
+    Credential:   HasSession, DCSync, ReadLAPSPassword, ReadGMSAPassword
+    Remote:       CanRDP, CanPSRemote, ExecuteDCOM, SQLAdmin
+    Delegation:   AllowedToDelegate, AllowedToAct, CoerceToTGT
+    Modification: ForceChangePassword, AddMember, WriteSPN, AddKeyCredentialLink
+
+    Tool Workflow
+    -------------
+    1. domain_info(info_type="list") — get domain IDs
+    2. domain_info(info_type="search", query="...") — find specific objects
+    3. Drill into objects:
+    - user_info(user_id, info_type="controllables|sessions|admin_rights")
+    - group_info(group_id, info_type="members|memberships")
+    - computer_info(computer_id, info_type="admin_users|sessions|controllers")
+    4. graph_analysis(info_type="shortest_path", start_node=..., end_node=...)
+    5. cypher_query(info_type="run", query="...") for complex analysis
+
+    Quick Attack Checks
+    -------------------
+    - DCSync rights: domain_info(info_type="dc_syncers")
+    - Cross-domain admins: domain_info(info_type="foreign_admins")
+    - Kerberoastable: cypher_query with hasspn=true
+    - Delegation abuse: user_info/computer_info with info_type="constrained_delegation"
+    """
+#Azure Resource
+@mcp.resource("bloodhound://guides/azure")
+def azure_guide() -> str:
+    """Azure / Entra ID analysis quick reference for BloodHound."""
+    return """Azure / Entra ID Quick Reference
+    ================================
+
+    IMPORTANT: For Azure environments, always prefer Cypher queries via
+    cypher_query(info_type="run") over REST API tools. Cypher provides
+    more comprehensive and flexible Azure analysis.
+
+    Node Types
+    ----------
+    AZUser              — Entra ID user
+    AZGroup             — Entra ID group
+    AZApp               — Azure application registration
+    AZServicePrincipal  — Service principal (app identity)
+    AZTenant            — Entra ID tenant
+    AZDevice            — Azure AD joined/registered device
+    AZRole              — Entra ID role
+    AZSubscription      — Azure subscription
+    AZResourceGroup     — Azure resource group
+    AZManagementGroup   — Management group
+    AZKeyVault          — Key vault
+
+    Key Relationships
+    -----------------
+    Admin:      AZGlobalAdmin, AZPrivilegedRoleAdmin, AZApplicationAdministrator
+    Control:    AZOwns, AZGrantAccess, AZAddMembers
+    Credential: AZResetPassword
+    Execution:  AZExecuteCommand
+
+    Always use AZ-prefixed node types in Cypher queries for Azure objects.
+
+    Key Queries
+    -----------
+    Global Admins:
+    MATCH p=(:AZBase)-[:AZGlobalAdmin*1..]->(:AZTenant) RETURN p
+
+    Users with admin roles:
+    MATCH p=(u:AZUser)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin]->(t:AZTenant)
+    RETURN u.displayname, u.objectid, type(r) as role_type
+
+    Service principals with dangerous permissions:
+    MATCH p=(sp:AZServicePrincipal)-[r:AZApplicationAdministrator|AZCloudApplicationAdministrator]->(t:AZTenant)
+    RETURN sp.displayname, sp.objectid, type(r) as permission
+
+    Attack paths to Global Admin:
+    MATCH p=shortestPath((n:AZUser {name:'target@domain.com'})-[*1..]->(a:AZGlobalAdmin))
+    RETURN p
+
+    Users who can reset passwords:
+    MATCH p=(u:AZUser)-[r:AZResetPassword]->(target:AZUser)
+    RETURN u.displayname, count(target) as can_reset_count
+    ORDER BY can_reset_count DESC
+    """
+#Adcs Resource
+@mcp.resource("bloodhound://guides/adcs")
+def adcs_guide() -> str:
+    """ADCS attack vector quick reference for BloodHound."""
+    return """ADCS Attack Quick Reference
+    ===========================
+
+    Node Types
+    ----------
+    CertTemplate  — Certificate template definitions
+    RootCA        — Root Certificate Authorities
+    EnterpriseCA  — Enterprise CAs (issue certificates)
+    AIACA         — Authority Information Access CAs
+    NTAuthStore   — NTAuth certificate store
+
+    Tool Workflow
+    -------------
+    Enumerate templates:  adcs_info(object_id=template_id, info_type="cert_template_info")
+    Template ACLs:        adcs_info(object_id=template_id, info_type="cert_template_controllers")
+    Enterprise CA config: adcs_info(object_id=ca_id, info_type="enterprise_ca_info")
+    Enterprise CA ACLs:   adcs_info(object_id=ca_id, info_type="enterprise_ca_controllers")
+    Root CA config:       adcs_info(object_id=ca_id, info_type="root_ca_info")
+    Root CA ACLs:         adcs_info(object_id=ca_id, info_type="root_ca_controllers")
+    AIA CA ACLs:          adcs_info(object_id=ca_id, info_type="aia_ca_controllers")
+
+    ESC Attack Vectors
+    ------------------
+    ESC1  — Misconfigured template: enrollee supplies SAN + low-priv enrollment
+    ESC2  — Any Purpose EKU or no EKU restriction
+    ESC3  — Enrollment agent template abuse
+    ESC4  — Vulnerable template ACLs (low-priv write access)
+    ESC6  — EDITF_ATTRIBUTESUBJECTALTNAME2 flag on CA
+    ESC8  — NTLM relay to CA HTTP enrollment endpoint
+    ESC9  — CT_FLAG_NO_SECURITY_EXTENSION on template
+    ESC10 — Weak certificate-to-account mapping
+    ESC13 — OID group link (issuance policy grants group membership)
+
+    Quick Cypher: Find All ADCS Edges
+    MATCH p=()-[:ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|GoldenCert]->(n)
+    RETURN p
+    """
+# Ad methodology resource
+@mcp.resource("bloodhound://guides/ad-methodology")
+def ad_methodology() -> str:
+    """Full Active Directory attack methodology and analysis workflow."""
+    return """AD Attack Methodology
+    =====================
+
+    Phase 1: Domain Reconnaissance
+    -------------------------------
+    1. List domains: domain_info(info_type="list")
+    2. For each domain:
+    - domain_info(info_type="dc_syncers") — non-standard DCSync = immediate win
+    - domain_info(info_type="controllers") — who has control edges?
+    - domain_info(info_type="foreign_admins") — cross-domain admin paths
+    - domain_info(info_type="inbound_trusts") / domain_info(info_type="outbound_trusts")
+
+    Phase 2: High-Value Target Identification
+    ------------------------------------------
+    3. Identify privileged groups:
+    domain_info(info_type="search", query="Domain Admins", object_type="Group")
+    group_info(group_id, info_type="members")
+
+    4. Enumerate tier-zero:
+    MATCH (n) WHERE COALESCE(n.system_tags, '') CONTAINS 'admin_tier_0' RETURN n
+
+    Phase 3: Attack Path Analysis
+    -----------------------------
+    5. From owned principals:
+    MATCH p=shortestPath((s:Base)-[*1..]->(t:Group {name:"DOMAIN ADMINS@DOMAIN.COM"}))
+    WHERE COALESCE(s.system_tags, '') CONTAINS 'owned'
+    RETURN p
+
+    6. Session hunting:
+    user_info(user_id, info_type="sessions") — where are DA creds cached?
+    computer_info(computer_id, info_type="sessions") — who's logged into this box?
+
+    Attack Patterns
+    ---------------
+
+    Kerberoasting:
+    MATCH (u:User) WHERE u.hasspn=true AND u.enabled=true
+    AND NOT u.objectid ENDS WITH '-502'
+    AND NOT COALESCE(u.gmsa, false) = true
+    RETURN u.name, u.serviceprincipalnames
+
+    AS-REP Roasting:
+    MATCH (u:User) WHERE u.dontreqpreauth=true AND u.enabled=true
+    RETURN u.name
+
+    Unconstrained Delegation:
+    MATCH (c:Computer) WHERE c.unconstraineddelegation=true
+    AND NOT c.objectid ENDS WITH '$' RETURN c.name
+
+    Constrained Delegation:
+    user_info(user_id, info_type="constrained_delegation")
+    computer_info(computer_id, info_type="constrained_delegation")
+    MATCH (n) WHERE n.allowedtodelegate IS NOT NULL RETURN n.name, n.allowedtodelegate
+
+    Resource-Based Constrained Delegation (RBCD):
+    MATCH p=(s)-[:AllowedToAct]->(t:Computer) RETURN p
+
+    LAPS Password Readers:
+    MATCH p=(n)-[:ReadLAPSPassword]->(c:Computer) RETURN p
+    computer_info(computer_id, info_type="controllers") — check for ReadLAPSPassword
+
+    gMSA Password Readers:
+    MATCH p=(n)-[:ReadGMSAPassword]->(t) RETURN p
+
+    Shadow Credentials:
+    MATCH p=(n)-[:AddKeyCredentialLink]->(t) RETURN p
+
+    Targeted Kerberoasting (WriteSPN):
+    MATCH p=(n)-[:WriteSPN]->(u:User) RETURN p
+
+    DCSync:
+    MATCH p=(n)-[:DCSync|GetChanges|GetChangesAll*1..]->(d:Domain)
+    RETURN p
+
+    SID History:
+    MATCH p=(n)-[:HasSIDHistory]->(t) RETURN p
+
+    Cross-Domain Trust Exploitation:
+    MATCH p=(d1:Domain)-[:TrustedBy]->(d2:Domain) RETURN p
+    domain_info(info_type="inbound_trusts") / domain_info(info_type="outbound_trusts")
+
+    NTLM Relay Paths:
+    MATCH p=()-[:CoerceAndRelayNTLMToSMB|CoerceAndRelayNTLMToADCS|CoerceAndRelayNTLMToLDAP|CoerceAndRelayNTLMToLDAPS]->()
+    RETURN p
+
+    GPO Abuse:
+    MATCH p=(n)-[:GenericAll|GenericWrite|WriteOwner|WriteDacl]->(g:GPO)-[:GPLink]->(ou:OU)-[:Contains*1..]->(target)
+    RETURN p
+    """
+#Azure Methodology resource
+@mcp.resource("bloodhound://guides/azure-methodology")
+def azure_methodology() -> str:
+    """Full Azure / Entra ID attack methodology and analysis workflow."""
+    return """Azure / Entra ID Attack Methodology
+    ====================================
+
+    Always prefer Cypher over REST tools for Azure analysis.
+
+    Phase 1: Tenant Reconnaissance
+    -------------------------------
+    1. Find all tenants:
+    MATCH (t:AZTenant) RETURN t.name, t.objectid
+
+    2. Enumerate Global Admins:
+    MATCH p=(:AZBase)-[:AZGlobalAdmin*1..]->(:AZTenant) RETURN p
+
+    3. Enumerate privileged roles:
+    MATCH p=(n)-[r:AZGlobalAdmin|AZPrivilegedRoleAdmin|AZApplicationAdministrator|AZCloudApplicationAdministrator]->(t:AZTenant)
+    RETURN n.displayname, type(r) as role
+
+    Phase 2: Service Principal Analysis
+    ------------------------------------
+    4. Find high-privilege service principals:
+    MATCH p=(sp:AZServicePrincipal)-[r]->(t:AZTenant)
+    RETURN sp.displayname, type(r) as permission
+
+    5. App registrations with dangerous permissions:
+    MATCH (app:AZApp)-[:AZRunsAs]->(sp:AZServicePrincipal)-[r]->(target)
+    RETURN app.displayname, sp.displayname, type(r) as permission, target.name
+
+    Phase 3: Attack Path Discovery
+    -------------------------------
+    6. Paths from user to Global Admin:
+    MATCH p=shortestPath((u:AZUser)-[*1..]->(ga:AZTenant))
+    WHERE u.name = 'target@domain.com'
+    RETURN p
+
+    7. Password reset chains:
+    MATCH p=(u:AZUser)-[:AZResetPassword*1..]->(target:AZUser)
+    RETURN u.displayname, length(p) as chain_length, target.displayname
+
+    8. Users who can reset the most passwords:
+    MATCH (u:AZUser)-[:AZResetPassword]->(target:AZUser)
+    RETURN u.displayname, count(target) as can_reset
+    ORDER BY can_reset DESC LIMIT 20
+
+    Attack Patterns
+    ---------------
+
+    Consent Grant Abuse:
+    MATCH (app:AZApp)-[:AZHasAppRole|AZGrantedAppRole]->(target)
+    RETURN app.displayname, target.name
+
+    Hybrid Environment (On-Prem to Azure):
+    MATCH p=(u:User)-[:SyncedToEntraUser]->(au:AZUser)-[*1..]->(t:AZTenant)
+    RETURN p
+    (Compromising an on-prem user synced to Entra can pivot to Azure)
+
+    Azure to On-Prem:
+    MATCH p=(au:AZUser)-[*1..]->(c:Computer)
+    RETURN p
+
+    Key Vault Access:
+    MATCH p=(n)-[r]->(kv:AZKeyVault)
+    RETURN n.displayname, type(r) as access_type, kv.name
+
+    Device Join Abuse:
+    MATCH (d:AZDevice) WHERE d.trusttype = 'AzureAd'
+    OPTIONAL MATCH (d)<-[:AZOwns]-(owner)
+    RETURN d.displayname, owner.displayname
+
+    Management Group to Subscription Paths:
+    MATCH p=(mg:AZManagementGroup)-[:AZContains*1..]->(s:AZSubscription)
+    RETURN p
+    """
+#ADCS Attack Methodology resource
+@mcp.resource("bloodhound://guides/adcs-methodology")
+def adcs_methodology() -> str:
+    """Full ADCS attack methodology with detailed ESC analysis."""
+    return """ADCS Attack Methodology
+    =======================
+
+    Analysis Workflow
+    -----------------
+    1. Enumerate all certificate templates:
+    MATCH (ct:CertTemplate) RETURN ct.name, ct.objectid
+
+    2. Enumerate all CAs:
+    MATCH (ca:EnterpriseCA) RETURN ca.name, ca.objectid
+    MATCH (ca:RootCA) RETURN ca.name, ca.objectid
+
+    3. Check for ADCS edges (quick scan):
+    MATCH p=()-[:ADCSESC1|ADCSESC3|ADCSESC4|ADCSESC6a|ADCSESC6b|ADCSESC9a|ADCSESC9b|ADCSESC10a|ADCSESC10b|ADCSESC13|GoldenCert]->(n)
+    RETURN p
+
+    4. For each finding, drill into template/CA details with adcs_info tool.
+
+    Detailed ESC Analysis
+    ---------------------
+
+    ESC1 — Misconfigured Certificate Templates
+    Condition: Template allows enrollment by low-priv users AND enrollee can
+    specify a Subject Alternative Name (SAN).
+    Check: adcs_info(info_type="cert_template_info") — look for:
+        - enrollee_supplies_subject = true
+        - Low-priv enrollment rights
+        - Client Authentication EKU
+    Cypher: MATCH p=()-[:ADCSESC1]->(n) RETURN p
+    Impact: Impersonate any user (including DA) by requesting cert with their SAN.
+
+    ESC2 — Any Purpose / No EKU Templates
+    Condition: Template has Any Purpose EKU (OID 2.5.29.37.0) or no EKU.
+    Check: adcs_info(info_type="cert_template_info") — examine EKU list
+    Impact: Certificate can be used for any purpose including client auth.
+
+    ESC3 — Enrollment Agent Templates
+    Condition: Template allows enrollment agent certificates + another template
+    allows enrollment on behalf of others.
+    Check: Two-stage — find enrollment agent templates, then find templates
+    that accept enrollment-on-behalf-of.
+    Cypher: MATCH p=()-[:ADCSESC3]->(n) RETURN p
+    Impact: Enroll as enrollment agent, then request certs for any user.
+
+    ESC4 — Vulnerable Template ACLs
+    Condition: Low-priv user has write access to the template object itself.
+    Check: adcs_info(info_type="cert_template_controllers") — look for
+    non-admin principals with:
+        - GenericAll, GenericWrite, WriteOwner, WriteDacl, WritePKIEnrollmentFlag
+    Cypher: MATCH p=()-[:ADCSESC4]->(n) RETURN p
+    Impact: Modify template to enable ESC1 conditions, then exploit.
+
+    ESC6 — EDITF_ATTRIBUTESUBJECTALTNAME2
+    Condition: Enterprise CA has the EDITF_ATTRIBUTESUBJECTALTNAME2 flag set.
+    Check: adcs_info(info_type="enterprise_ca_info") — check CA flags
+    Cypher: MATCH p=()-[:ADCSESC6a|ADCSESC6b]->(n) RETURN p
+    Impact: ANY certificate request can include arbitrary SANs.
+    Variants: ESC6a (direct), ESC6b (via relay)
+
+    ESC8 — NTLM Relay to AD CS HTTP Endpoints
+    Condition: CA has HTTP enrollment endpoint (certsrv) and NTLM is accepted.
+    Check: adcs_info(info_type="enterprise_ca_info") — check for HTTP endpoints
+    Impact: Relay machine account NTLM auth to CA, get cert as that machine.
+
+    ESC9 — No Security Extension
+    Condition: Template has CT_FLAG_NO_SECURITY_EXTENSION flag.
+    This removes the szOID_NTDS_CA_SECURITY_EXT from issued certs.
+    Cypher: MATCH p=()-[:ADCSESC9a|ADCSESC9b]->(n) RETURN p
+    Impact: Bypass StrongCertificateBindingEnforcement.
+
+    ESC10 — Weak Certificate Mappings
+    Condition: Registry allows weak certificate-to-account mapping.
+    CertificateMappingMethods includes UPN mapping (0x4) without strong binding.
+    Cypher: MATCH p=()-[:ADCSESC10a|ADCSESC10b]->(n) RETURN p
+    Impact: Map cert to arbitrary user via UPN matching.
+
+    ESC13 — OID Group Link
+    Condition: Issuance policy OID is linked to a group via msDS-OIDToGroupLink.
+    Enrolling in a template with that policy grants group membership.
+    Cypher: MATCH p=()-[:ADCSESC13]->(n) RETURN p
+    Impact: Gain membership in the linked group by enrolling for a certificate.
+
+    Golden Certificate:
+    Condition: Attacker has CA private key.
+    Cypher: MATCH p=()-[:GoldenCert]->(n) RETURN p
+    Impact: Forge any certificate. Requires root/enterprise CA key compromise.
+
+    Template Analysis Checklist
+    ---------------------------
+    For each certificate template, check:
+    1. Who can enroll? (enrollment rights)
+    2. Can enrollee specify SAN? (enrollee_supplies_subject)
+    3. What EKUs are set? (Client Auth, Any Purpose, etc.)
+    4. Who has write access to the template? (cert_template_controllers)
+    5. Is manager approval required? (issuance requirements)
+    6. Are there enrollment agents? (authorized signatures)
+    """
+# OpenGraph Guide Resource
+@mcp.resource("bloodhound://opengraph/guide")
+def opengraph_guide() -> str:
+    """BloodHound OpenGraph schema design and custom node guide."""
+    return """OpenGraph Custom Nodes Guide
+    ============================
+
+    Custom node types are user-defined and vary by environment. When working
+    with OpenGraph data, ask the user for their specific schema definition
+    and example Cypher queries. Use their schema to construct environment-
+    specific analysis. The examples in bloodhound://opengraph/examples show
+    the general pattern.
+
+    Key Concepts
+    ------------
+    1. Custom Node Types: User-defined categories (e.g., SQLServer, WebApp)
+    2. OpenGraph Schema: JSON structure for ingesting nodes and edges
+    3. Visual Config: Icons and colors for node display in BloodHound UI
+    4. Relationships: Directed edges connecting custom nodes to AD/Azure objects
+
+    Schema Structure
+    ----------------
+    {
+    "graph": {
+        "nodes": [
+        {
+            "id": "unique-identifier",
+            "kinds": ["CustomNodeType", "Base"],
+            "properties": {
+            "name": "Display Name",
+            "custom_property": "value"
+            }
+        }
+        ],
+        "edges": [
+        {
+            "kind": "CustomRelationship",
+            "start": {"value": "source-node-id"},
+            "end": {"value": "target-node-id"},
+            "properties": {}
+        }
+        ]
+    }
+    }
+
+    Property Rules
+    --------------
+    - Properties must be primitive types (strings, numbers, booleans)
+    - Arrays must be homogeneous (all elements same type)
+    - No nested objects
+    - First 'kind' in the kinds array determines visual representation
+
+    Icon Configuration
+    ------------------
+    - Font Awesome free, solid icons only
+    - Name without 'fa-' prefix (e.g., "database" not "fa-database")
+    - Colors in #RGB or #RRGGBB format
+    - Example:
+    {"icon": {"type": "font-awesome", "name": "database", "color": "#CC2936"}}
+    - Validate before creating: custom_nodes(info_type="validate_icon", icon_config_json=...)
+
+    Best Practices
+    --------------
+    - Every node must have a globally unique ID (GUID, SID, thumbprint, FQDN)
+    - Every edge must be directed (one-way) — think "map of one-way streets"
+    - Edge direction should follow "access or attack" flow
+    - Create paths connecting non-adjacent nodes for attack path discovery
+    - If not modeling multi-node paths, consider a relational database instead
+    - Connect custom nodes to existing AD/Azure objects where applicable
+
+    Tool Workflow
+    -------------
+    - custom_nodes(info_type="list") — list all custom node type configs
+    - custom_nodes(info_type="get", kind_name="...") — get specific type config
+    - custom_nodes(info_type="create", custom_types_json="...") — create types
+    - custom_nodes(info_type="update", kind_name="...", config_json="...") — update
+    - custom_nodes(info_type="delete", kind_name="...") — delete type config
+    """
+#OpenGraph Examples Resource
+@mcp.resource("bloodhound://opengraph/examples")
+def opengraph_examples() -> str:
+    """Practical examples of custom node implementations for OpenGraph."""
+    return """OpenGraph Implementation Examples
+    =================================
+
+    These examples demonstrate the pattern for creating custom nodes. For your
+    specific environment, provide your OpenGraph schema definition and example
+    Cypher queries, and the model will adapt analysis accordingly.
+
+    Example 1: SQL Server Environment
+    ----------------------------------
+    Custom Node Types:
+    MSSQL_Server  — SQL Server instance
+    MSSQL_Database — Individual database
+
+    Icon Configuration:
+    {
+    "MSSQL_Server": {
+        "icon": {"type": "font-awesome", "name": "server", "color": "#CC2936"}
+    },
+    "MSSQL_Database": {
+        "icon": {"type": "font-awesome", "name": "database", "color": "#4472C4"}
+    }
+    }
+
+    Relationships:
+    User -[SQLAdmin]-> MSSQL_Server
+    MSSQL_Server -[Contains]-> MSSQL_Database
+    MSSQL_Server -[RunsAs]-> User (service account)
+
+    OpenGraph Data:
+    {
+    "graph": {
+        "nodes": [
+        {
+            "id": "sql01.corp.local",
+            "kinds": ["MSSQL_Server", "Base"],
+            "properties": {
+            "name": "SQL01",
+            "version": "SQL Server 2019",
+            "instance": "MSSQLSERVER"
+            }
+        }
+        ],
+        "edges": [
+        {
+            "kind": "SQLAdmin",
+            "start": {"value": "user-object-id"},
+            "end": {"value": "sql01.corp.local"}
+        }
+        ]
+    }
+    }
+
+    Attack Path: User -> SQLAdmin -> MSSQL_Server -> RunsAs -> ServiceAccount -> Domain
+
+    Example 2: Web Application Stack
+    ---------------------------------
+    Custom Node Types:
+    WebApp    — Web application
+    WebServer — Web server (IIS, Apache, Nginx)
+    AppPool   — IIS application pool
+
+    Icon Configuration:
+    {
+    "WebApp": {
+        "icon": {"type": "font-awesome", "name": "globe", "color": "#00B04F"}
+    },
+    "WebServer": {
+        "icon": {"type": "font-awesome", "name": "server", "color": "#FF6600"}
+    }
+    }
+
+    Relationships:
+    WebApp -[RunsOn]-> WebServer
+    WebServer -[RunsAs]-> User (service account)
+    User -[WebAdmin]-> WebApp
+    AppPool -[IdentityOf]-> User (app pool identity)
+
+    Attack Path: User -> WebAdmin -> WebApp -> RunsOn -> WebServer -> RunsAs -> ServiceAccount -> Domain
+
+    Example Cypher Queries:
+    Find all SQL Servers with admin paths:
+        MATCH p=(u:User)-[:SQLAdmin]->(s:MSSQL_Server) RETURN p
+
+    Find web app service accounts:
+        MATCH p=(w:WebServer)-[:RunsAs]->(u:User) RETURN p
+
+    Attack paths through custom nodes to DA:
+        MATCH p=shortestPath((s:Base)-[*1..]->(t:Group {name:"DOMAIN ADMINS@DOMAIN.COM"}))
+        WHERE s.name = 'SQL01'
+        RETURN p
+    """
 
 
 
-
-
-
-
-
-# Create the Resources for the LLM
 
 
 
