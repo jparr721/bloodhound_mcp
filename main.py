@@ -16,7 +16,11 @@ from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
 # Import Bloodhound API client
-from lib.bloodhound_api import BloodhoundAPI, BloodhoundAPIError, BloodhoundConnectionError
+from lib.bloodhound_api import (
+    BloodhoundAPI,
+    BloodhoundAPIError,
+    BloodhoundConnectionError,
+)
 
 # Set up logging
 logging.basicConfig(
@@ -2841,11 +2845,12 @@ def get_aia_ca_controllers(ca_id: str, limit: int = 100, skip: int = 0):
 # Enhanced run_cypher_query MCP tool for main.py
 # Replace the existing run_cypher_query function with this version
 
+
 @mcp.tool()
 def run_cypher_query(query: str, include_properties: bool = True):
     """
     Run a custom Cypher query on the BloodHound Neo4j database.
-    
+
     This tool properly interprets BloodHound's HTTP response codes:
     - 200: Query successful with results
     - 404: Query successful but no results found (NOT an error!)
@@ -2863,7 +2868,7 @@ def run_cypher_query(query: str, include_properties: bool = True):
     try:
         # Use the enhanced run_query method
         result = bloodhound_api.cypher.run_query(query, include_properties)
-        
+
         # Handle different result structures (for backward compatibility)
         if isinstance(result, dict) and "metadata" in result:
             # New format with metadata
@@ -2875,117 +2880,135 @@ def run_cypher_query(query: str, include_properties: bool = True):
             result_data = result
             has_results = bool(result_data.get("nodes") or result_data.get("edges"))
             metadata = {
-                "status": "success_with_results" if has_results else "success_no_results",
+                "status": "success_with_results"
+                if has_results
+                else "success_no_results",
                 "query": query,
                 "has_results": has_results,
-                "status_code": 200
+                "status_code": 200,
             }
-        
+
         # Check if query found results or not
         if has_results:
-            return json.dumps({
-                "success": True,
-                "message": "Cypher query executed successfully - results found",
-                "result": result_data,
-                "metadata": metadata,
-                "query_info": {
-                    "query": query,
-                    "execution_status": "success_with_results",
-                    "result_count": {
-                        "nodes": len(result_data.get("nodes", [])),
-                        "edges": len(result_data.get("edges", []))
-                    }
+            return json.dumps(
+                {
+                    "success": True,
+                    "message": "Cypher query executed successfully - results found",
+                    "result": result_data,
+                    "metadata": metadata,
+                    "query_info": {
+                        "query": query,
+                        "execution_status": "success_with_results",
+                        "result_count": {
+                            "nodes": len(result_data.get("nodes", [])),
+                            "edges": len(result_data.get("edges", [])),
+                        },
+                    },
                 }
-            })
+            )
         else:
             # Query was successful but found no results
-            return json.dumps({
-                "success": True, 
-                "message": "Cypher query executed successfully - no results found",
-                "result": result_data,
-                "metadata": metadata,
-                "query_info": {
-                    "query": query,
-                    "execution_status": "success_no_results", 
-                    "interpretation": "This may indicate: 1) No attack paths exist, 2) No objects match the criteria, 3) The environment doesn't have the queried objects"
+            return json.dumps(
+                {
+                    "success": True,
+                    "message": "Cypher query executed successfully - no results found",
+                    "result": result_data,
+                    "metadata": metadata,
+                    "query_info": {
+                        "query": query,
+                        "execution_status": "success_no_results",
+                        "interpretation": "This may indicate: 1) No attack paths exist, 2) No objects match the criteria, 3) The environment doesn't have the queried objects",
+                    },
                 }
-            })
-            
+            )
+
     except BloodhoundAPIError as e:
         # Handle different types of API errors appropriately
         if e.status_code == 400:
-            return json.dumps({
-                "success": False,
-                "error_type": "syntax_error",
-                "message": "Cypher query syntax error",
-                "error": str(e),
-                "query": query,
-                "suggestions": [
-                    "Check node labels (User, Computer, Group, Domain, AZUser, etc.)",
-                    "Verify relationship types (MemberOf, AdminTo, HasSession, etc.)",
-                    "Ensure property names are correct (.name, .enabled, .owned, etc.)",
-                    "Use get_bloodhound_schema() to see available options",
-                    "Try validate_cypher_query() first to check syntax"
-                ]
-            })
-        
+            return json.dumps(
+                {
+                    "success": False,
+                    "error_type": "syntax_error",
+                    "message": "Cypher query syntax error",
+                    "error": str(e),
+                    "query": query,
+                    "suggestions": [
+                        "Check node labels (User, Computer, Group, Domain, AZUser, etc.)",
+                        "Verify relationship types (MemberOf, AdminTo, HasSession, etc.)",
+                        "Ensure property names are correct (.name, .enabled, .owned, etc.)",
+                        "Use get_bloodhound_schema() to see available options",
+                        "Try validate_cypher_query() first to check syntax",
+                    ],
+                }
+            )
+
         elif e.status_code is not None and e.status_code in [401, 403]:
-            return json.dumps({
-                "success": False,
-                "error_type": "authentication_error", 
-                "message": "Authentication or permission error",
-                "error": str(e),
-                "suggestions": [
-                    "Check your BloodHound API credentials",
-                    "Verify your user has Cypher query permissions",
-                    "Ensure your API token hasn't expired"
-                ]
-            })
-        
+            return json.dumps(
+                {
+                    "success": False,
+                    "error_type": "authentication_error",
+                    "message": "Authentication or permission error",
+                    "error": str(e),
+                    "suggestions": [
+                        "Check your BloodHound API credentials",
+                        "Verify your user has Cypher query permissions",
+                        "Ensure your API token hasn't expired",
+                    ],
+                }
+            )
+
         elif e.status_code is not None and e.status_code >= 500:
-            return json.dumps({
+            return json.dumps(
+                {
+                    "success": False,
+                    "error_type": "server_error",
+                    "message": "BloodHound server error",
+                    "error": str(e),
+                    "suggestions": [
+                        "Check if BloodHound server is running",
+                        "Try a simpler query to test connectivity",
+                        "Check BloodHound server logs for details",
+                    ],
+                }
+            )
+
+        else:
+            return json.dumps(
+                {
+                    "success": False,
+                    "error_type": "unknown_error",
+                    "message": f"Unexpected API error (HTTP {e.status_code if e.status_code is not None else 'unknown'})",
+                    "error": str(e),
+                    "query": query,
+                }
+            )
+
+    except BloodhoundConnectionError as e:
+        return json.dumps(
+            {
                 "success": False,
-                "error_type": "server_error",
-                "message": "BloodHound server error", 
+                "error_type": "connection_error",
+                "message": "Failed to connect to BloodHound server",
                 "error": str(e),
                 "suggestions": [
                     "Check if BloodHound server is running",
-                    "Try a simpler query to test connectivity",
-                    "Check BloodHound server logs for details"
-                ]
-            })
-        
-        else:
-            return json.dumps({
-                "success": False,
-                "error_type": "unknown_error",
-                "message": f"Unexpected API error (HTTP {e.status_code if e.status_code is not None else 'unknown'})",
-                "error": str(e),
-                "query": query
-            })
-    
-    except BloodhoundConnectionError as e:
-        return json.dumps({
-            "success": False,
-            "error_type": "connection_error",
-            "message": "Failed to connect to BloodHound server",
-            "error": str(e),
-            "suggestions": [
-                "Check if BloodHound server is running",
-                "Verify network connectivity", 
-                "Check your BLOODHOUND_DOMAIN environment variable"
-            ]
-        })
-    
+                    "Verify network connectivity",
+                    "Check your BLOODHOUND_DOMAIN environment variable",
+                ],
+            }
+        )
+
     except Exception as e:
         logger.error(f"Unexpected error executing Cypher query: {e}")
-        return json.dumps({
-            "success": False,
-            "error_type": "unexpected_error", 
-            "message": "Unexpected error executing Cypher query",
-            "error": f"Failed to execute Cypher query: {str(e)}",
-            "query": query
-        })
+        return json.dumps(
+            {
+                "success": False,
+                "error_type": "unexpected_error",
+                "message": "Unexpected error executing Cypher query",
+                "error": f"Failed to execute Cypher query: {str(e)}",
+                "query": query,
+            }
+        )
 
 
 # Add a new tool for checking query execution status
@@ -2993,101 +3016,140 @@ def run_cypher_query(query: str, include_properties: bool = True):
 def interpret_cypher_result(query: str, result_json: str):
     """
     Help interpret the results of a Cypher query for offensive security analysis.
-    
+
     Args:
         query: The original Cypher query that was executed
         result_json: The JSON result from run_cypher_query
-        
+
     Returns:
         Human-readable interpretation of what the results mean for security analysis
     """
     try:
-        result = json.loads(result_json) if isinstance(result_json, str) else result_json
-        
+        result = (
+            json.loads(result_json) if isinstance(result_json, str) else result_json
+        )
+
         if not result.get("success", False):
-            return json.dumps({
-                "interpretation": "Query failed to execute",
-                "error_analysis": result.get("error", "Unknown error"),
-                "recommendations": result.get("suggestions", [])
-            })
-        
+            return json.dumps(
+                {
+                    "interpretation": "Query failed to execute",
+                    "error_analysis": result.get("error", "Unknown error"),
+                    "recommendations": result.get("suggestions", []),
+                }
+            )
+
         query_lower = query.lower()
         result_data = result.get("result", {})
         nodes = result_data.get("nodes", [])
-        edges = result_data.get("edges", []) 
-        
+        edges = result_data.get("edges", [])
+
         interpretations = []
-        
+
         if "domain admin" in query_lower:
             if nodes:
-                interpretations.append(f"Found {len(nodes)} objects related to Domain Admins")
-                interpretations.append("These represent potential high-value targets or current administrators")
+                interpretations.append(
+                    f"Found {len(nodes)} objects related to Domain Admins"
+                )
+                interpretations.append(
+                    "These represent potential high-value targets or current administrators"
+                )
             else:
                 interpretations.append("No Domain Admin relationships found")
-                interpretations.append("This could mean: 1) No standard DA group exists, 2) No users are currently DAs, 3) Different naming convention used")
-        
+                interpretations.append(
+                    "This could mean: 1) No standard DA group exists, 2) No users are currently DAs, 3) Different naming convention used"
+                )
+
         elif "kerberoast" in query_lower or "hasspn" in query_lower:
             if nodes:
                 spn_users = [n for n in nodes if n.get("hasspn") == True]
-                interpretations.append(f"Found {len(spn_users)} Kerberoastable service accounts")
-                interpretations.append("These accounts can be targeted for credential extraction via Kerberoasting")
+                interpretations.append(
+                    f"Found {len(spn_users)} Kerberoastable service accounts"
+                )
+                interpretations.append(
+                    "These accounts can be targeted for credential extraction via Kerberoasting"
+                )
             else:
                 interpretations.append("No Kerberoastable accounts found")
-                interpretations.append("Environment may not have service accounts with SPNs")
-        
+                interpretations.append(
+                    "Environment may not have service accounts with SPNs"
+                )
+
         elif "owned" in query_lower:
             if nodes:
                 owned_objects = [n for n in nodes if n.get("owned") == True]
-                interpretations.append(f"Found {len(owned_objects)} compromised objects")
-                interpretations.append("These represent your current foothold in the environment")
+                interpretations.append(
+                    f"Found {len(owned_objects)} compromised objects"
+                )
+                interpretations.append(
+                    "These represent your current foothold in the environment"
+                )
             else:
                 interpretations.append("No owned objects marked in BloodHound")
-                interpretations.append("Mark compromised accounts as 'owned' to see attack paths")
-        
+                interpretations.append(
+                    "Mark compromised accounts as 'owned' to see attack paths"
+                )
+
         elif "shortestpath" in query_lower:
             if edges:
                 interpretations.append(f"Found attack path with {len(edges)} steps")
                 interpretations.append("This represents a potential escalation route")
             else:
                 interpretations.append("No attack path found between specified objects")
-                interpretations.append("May need to compromise intermediate objects first")
-        
-        elif any(azure_term in query_lower for azure_term in ["azure", "azuser", "azglobal"]):
+                interpretations.append(
+                    "May need to compromise intermediate objects first"
+                )
+
+        elif any(
+            azure_term in query_lower for azure_term in ["azure", "azuser", "azglobal"]
+        ):
             if nodes:
                 interpretations.append(f"Found {len(nodes)} Azure/Entra ID objects")
-                interpretations.append("Focus on privileged roles and service principals")
+                interpretations.append(
+                    "Focus on privileged roles and service principals"
+                )
             else:
                 interpretations.append("No Azure objects found")
-                interpretations.append("Environment may be on-premises only or data not collected")
-        
+                interpretations.append(
+                    "Environment may be on-premises only or data not collected"
+                )
+
         else:
             if nodes:
-                interpretations.append(f"Query returned {len(nodes)} nodes and {len(edges)} relationships")
-                interpretations.append("Review the objects for potential security impact")
+                interpretations.append(
+                    f"Query returned {len(nodes)} nodes and {len(edges)} relationships"
+                )
+                interpretations.append(
+                    "Review the objects for potential security impact"
+                )
             else:
                 interpretations.append("Query found no matching objects")
-        
-        return json.dumps({
-            "query_type": "offensive_security_analysis",
-            "interpretation": interpretations,
-            "tactical_recommendations": [
-                "Review high-value objects first",
-                "Look for attack paths to privileged accounts", 
-                "Check for misconfigurations or excessive permissions",
-                "Mark newly compromised objects as 'owned'"
-            ],
-            "data_summary": {
-                "nodes_found": len(nodes),
-                "relationships_found": len(edges),
-                "has_results": len(nodes) > 0 or len(edges) > 0
+
+        return json.dumps(
+            {
+                "query_type": "offensive_security_analysis",
+                "interpretation": interpretations,
+                "tactical_recommendations": [
+                    "Review high-value objects first",
+                    "Look for attack paths to privileged accounts",
+                    "Check for misconfigurations or excessive permissions",
+                    "Mark newly compromised objects as 'owned'",
+                ],
+                "data_summary": {
+                    "nodes_found": len(nodes),
+                    "relationships_found": len(edges),
+                    "has_results": len(nodes) > 0 or len(edges) > 0,
+                },
             }
-        })
-        
+        )
+
     except Exception as e:
-        return json.dumps({
-            "error": f"Failed to interpret result: {str(e)}",
-            "recommendation": "Check the result format and try again"
-        })
+        return json.dumps(
+            {
+                "error": f"Failed to interpret result: {str(e)}",
+                "recommendation": "Check the result format and try again",
+            }
+        )
+
 
 # Create saved query management tools
 @mcp.tool()
@@ -3143,23 +3205,26 @@ def list_saved_queries(skip: int = 0, limit: int = 100, name: str = None):
 # DATA QUALITY API TOOLS
 # ===============================
 
+
 @mcp.tool()
 def get_data_completeness_stats():
     """
-    Get database completeness statistics showing the percentage of local admins 
+    Get database completeness statistics showing the percentage of local admins
     and sessions collected across the BloodHound database.
-    
+
     This is useful for understanding data quality and collection coverage.
-    
+
     Returns:
         JSON response with completeness statistics
     """
     try:
         stats = bloodhound_api.data_quality.get_completeness_stats()
-        return json.dumps({
-            "message": "Successfully retrieved database completeness statistics",
-            "completeness_stats": stats.get("data", {}),
-        })
+        return json.dumps(
+            {
+                "message": "Successfully retrieved database completeness statistics",
+                "completeness_stats": stats.get("data", {}),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving completeness stats: {e}")
         return json.dumps({"error": f"Failed to retrieve completeness stats: {str(e)}"})
@@ -3167,17 +3232,17 @@ def get_data_completeness_stats():
 
 @mcp.tool()
 def get_ad_domain_data_quality_stats(
-    domain_id: str, 
-    start: str = None, 
-    end: str = None, 
+    domain_id: str,
+    start: str = None,
+    end: str = None,
     sort_by: str = None,
-    skip: int = 0, 
-    limit: int = 100
+    skip: int = 0,
+    limit: int = 100,
 ):
     """
     Get data quality statistics for a specific Active Directory domain.
     Provides time series data showing collection quality over time.
-    
+
     Args:
         domain_id: The ID of the AD domain to query
         start: Beginning datetime in RFC-3339 format (optional)
@@ -3185,7 +3250,7 @@ def get_ad_domain_data_quality_stats(
         sort_by: Sort by field - 'created_at' or 'updated_at' (optional)
         skip: Number of results to skip for pagination
         limit: Maximum number of results to return
-        
+
     Returns:
         JSON response with AD domain data quality statistics
     """
@@ -3193,30 +3258,34 @@ def get_ad_domain_data_quality_stats(
         stats = bloodhound_api.data_quality.get_ad_domain_data_quality_stats(
             domain_id, start, end, sort_by, skip, limit
         )
-        return json.dumps({
-            "message": f"Successfully retrieved AD domain data quality stats for domain: {domain_id}",
-            "domain_id": domain_id,
-            "data_quality_stats": stats.get("data", []),
-            "count": stats.get("count", 0),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved AD domain data quality stats for domain: {domain_id}",
+                "domain_id": domain_id,
+                "data_quality_stats": stats.get("data", []),
+                "count": stats.get("count", 0),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving AD domain data quality stats: {e}")
-        return json.dumps({"error": f"Failed to retrieve AD domain data quality stats: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to retrieve AD domain data quality stats: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def get_azure_tenant_data_quality_stats(
-    tenant_id: str, 
-    start: str = None, 
-    end: str = None, 
+    tenant_id: str,
+    start: str = None,
+    end: str = None,
     sort_by: str = None,
-    skip: int = 0, 
-    limit: int = 100
+    skip: int = 0,
+    limit: int = 100,
 ):
     """
     Get data quality statistics for a specific Azure tenant.
     Provides time series data showing collection quality over time.
-    
+
     Args:
         tenant_id: The ID of the Azure tenant to query
         start: Beginning datetime in RFC-3339 format (optional)
@@ -3224,7 +3293,7 @@ def get_azure_tenant_data_quality_stats(
         sort_by: Sort by field - 'created_at' or 'updated_at' (optional)
         skip: Number of results to skip for pagination
         limit: Maximum number of results to return
-        
+
     Returns:
         JSON response with Azure tenant data quality statistics
     """
@@ -3232,30 +3301,34 @@ def get_azure_tenant_data_quality_stats(
         stats = bloodhound_api.data_quality.get_azure_tenant_data_quality_stats(
             tenant_id, start, end, sort_by, skip, limit
         )
-        return json.dumps({
-            "message": f"Successfully retrieved Azure tenant data quality stats for tenant: {tenant_id}",
-            "tenant_id": tenant_id,
-            "data_quality_stats": stats.get("data", []),
-            "count": stats.get("count", 0),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved Azure tenant data quality stats for tenant: {tenant_id}",
+                "tenant_id": tenant_id,
+                "data_quality_stats": stats.get("data", []),
+                "count": stats.get("count", 0),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving Azure tenant data quality stats: {e}")
-        return json.dumps({"error": f"Failed to retrieve Azure tenant data quality stats: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to retrieve Azure tenant data quality stats: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def get_platform_data_quality_stats(
-    platform_id: str, 
-    start: str = None, 
-    end: str = None, 
+    platform_id: str,
+    start: str = None,
+    end: str = None,
     sort_by: str = None,
-    skip: int = 0, 
-    limit: int = 100
+    skip: int = 0,
+    limit: int = 100,
 ):
     """
     Get aggregate data quality statistics for a platform (AD or Azure).
     Provides time series data showing overall collection quality.
-    
+
     Args:
         platform_id: Platform ID - must be 'ad' or 'azure'
         start: Beginning datetime in RFC-3339 format (optional)
@@ -3263,7 +3336,7 @@ def get_platform_data_quality_stats(
         sort_by: Sort by field - 'created_at' or 'updated_at' (optional)
         skip: Number of results to skip for pagination
         limit: Maximum number of results to return
-        
+
     Returns:
         JSON response with platform data quality statistics
     """
@@ -3271,36 +3344,43 @@ def get_platform_data_quality_stats(
         stats = bloodhound_api.data_quality.get_platform_data_quality_stats(
             platform_id, start, end, sort_by, skip, limit
         )
-        return json.dumps({
-            "message": f"Successfully retrieved platform data quality stats for: {platform_id}",
-            "platform_id": platform_id,
-            "data_quality_stats": stats.get("data", []),
-            "count": stats.get("count", 0),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved platform data quality stats for: {platform_id}",
+                "platform_id": platform_id,
+                "data_quality_stats": stats.get("data", []),
+                "count": stats.get("count", 0),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving platform data quality stats: {e}")
-        return json.dumps({"error": f"Failed to retrieve platform data quality stats: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to retrieve platform data quality stats: {str(e)}"}
+        )
 
 
 # ===============================
 # CUSTOM NODES API TOOLS
 # ===============================
 
+
 @mcp.tool()
 def get_all_custom_nodes():
     """
     Get all custom node configurations from BloodHound.
     Custom nodes represent objects outside of standard AD and Azure types.
-    
+
     Returns:
         JSON response with all custom node configurations including display settings
     """
     try:
         nodes = bloodhound_api.custom_nodes.get_all_custom_nodes()
-        return json.dumps({
-            "message": f"Successfully retrieved {len(nodes.get('data', []))} custom node configurations",
-            "custom_nodes": nodes.get("data", []),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved {len(nodes.get('data', []))} custom node configurations",
+                "custom_nodes": nodes.get("data", []),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving custom nodes: {e}")
         return json.dumps({"error": f"Failed to retrieve custom nodes: {str(e)}"})
@@ -3310,42 +3390,46 @@ def get_all_custom_nodes():
 def get_custom_node(kind_name: str):
     """
     Get configuration for a specific custom node kind.
-    
+
     Args:
         kind_name: The name of the custom node kind to query
-        
+
     Returns:
         JSON response with the custom node configuration
     """
     try:
         node = bloodhound_api.custom_nodes.get_custom_node(kind_name)
-        return json.dumps({
-            "message": f"Successfully retrieved custom node configuration for: {kind_name}",
-            "custom_node": node.get("data", {}),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved custom node configuration for: {kind_name}",
+                "custom_node": node.get("data", {}),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving custom node {kind_name}: {e}")
-        return json.dumps({"error": f"Failed to retrieve custom node {kind_name}: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to retrieve custom node {kind_name}: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def create_custom_nodes(custom_types_json: str):
     """
     Create new custom node kinds with display metadata.
-    
+
     Args:
         custom_types_json: JSON string containing custom types configuration.
                           Each type should have an 'icon' object with:
                           - type: "font-awesome"
-                          - name: Icon name (without fa- prefix) 
+                          - name: Icon name (without fa- prefix)
                           - color: Color in #RGB or #RRGGBB format
-                          
+
     Example custom_types_json:
     {
         "SQLServer": {
             "icon": {
                 "type": "font-awesome",
-                "name": "database", 
+                "name": "database",
                 "color": "#FF0000"
             }
         },
@@ -3357,28 +3441,35 @@ def create_custom_nodes(custom_types_json: str):
             }
         }
     }
-    
+
     Returns:
         JSON response with created custom node configurations
     """
     try:
         import json as json_module
+
         custom_types = json_module.loads(custom_types_json)
-        
+
         # Validate each icon configuration
         for kind_name, config in custom_types.items():
             if "icon" in config:
-                validation = bloodhound_api.custom_nodes.validate_icon_config(config["icon"])
+                validation = bloodhound_api.custom_nodes.validate_icon_config(
+                    config["icon"]
+                )
                 if not validation["valid"]:
-                    return json.dumps({
-                        "error": f"Invalid icon configuration for {kind_name}: {validation['errors']}"
-                    })
-        
+                    return json.dumps(
+                        {
+                            "error": f"Invalid icon configuration for {kind_name}: {validation['errors']}"
+                        }
+                    )
+
         nodes = bloodhound_api.custom_nodes.create_custom_nodes(custom_types)
-        return json.dumps({
-            "message": f"Successfully created {len(nodes.get('data', []))} custom node types",
-            "created_nodes": nodes.get("data", []),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully created {len(nodes.get('data', []))} custom node types",
+                "created_nodes": nodes.get("data", []),
+            }
+        )
     except json_module.JSONDecodeError as e:
         return json.dumps({"error": f"Invalid JSON format: {str(e)}"})
     except Exception as e:
@@ -3390,7 +3481,7 @@ def create_custom_nodes(custom_types_json: str):
 def update_custom_node(kind_name: str, config_json: str):
     """
     Update existing custom node kind with display metadata.
-    
+
     Args:
         kind_name: The name of the custom node kind to update
         config_json: JSON string containing the icon configuration:
@@ -3401,80 +3492,94 @@ def update_custom_node(kind_name: str, config_json: str):
                             "color": "#RRGGBB"
                         }
                     }
-                    
+
     Returns:
         JSON response with updated custom node configuration
     """
     try:
         import json as json_module
+
         config = json_module.loads(config_json)
-        
+
         # Validate icon configuration if present
         if "icon" in config:
-            validation = bloodhound_api.custom_nodes.validate_icon_config(config["icon"])
+            validation = bloodhound_api.custom_nodes.validate_icon_config(
+                config["icon"]
+            )
             if not validation["valid"]:
-                return json.dumps({
-                    "error": f"Invalid icon configuration: {validation['errors']}"
-                })
-        
+                return json.dumps(
+                    {"error": f"Invalid icon configuration: {validation['errors']}"}
+                )
+
         node = bloodhound_api.custom_nodes.update_custom_node(kind_name, config)
-        return json.dumps({
-            "message": f"Successfully updated custom node: {kind_name}",
-            "updated_node": node.get("data", {}),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully updated custom node: {kind_name}",
+                "updated_node": node.get("data", {}),
+            }
+        )
     except json_module.JSONDecodeError as e:
         return json.dumps({"error": f"Invalid JSON format: {str(e)}"})
     except Exception as e:
         logger.error(f"Error updating custom node {kind_name}: {e}")
-        return json.dumps({"error": f"Failed to update custom node {kind_name}: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to update custom node {kind_name}: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def delete_custom_node(kind_name: str):
     """
     Delete configuration for a specific custom node kind.
-    
+
     Args:
         kind_name: The name of the custom node kind to delete
-        
+
     Returns:
         JSON response confirming deletion
     """
     try:
         bloodhound_api.custom_nodes.delete_custom_node(kind_name)
-        return json.dumps({
-            "message": f"Successfully deleted custom node: {kind_name}",
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully deleted custom node: {kind_name}",
+            }
+        )
     except Exception as e:
         logger.error(f"Error deleting custom node {kind_name}: {e}")
-        return json.dumps({"error": f"Failed to delete custom node {kind_name}: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to delete custom node {kind_name}: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def validate_custom_node_icon(icon_config_json: str):
     """
     Validate icon configuration for custom nodes before creating/updating.
-    
+
     Args:
         icon_config_json: JSON string containing icon configuration:
                          {
                              "type": "font-awesome",
-                             "name": "icon_name", 
+                             "name": "icon_name",
                              "color": "#RRGGBB"
                          }
-                         
+
     Returns:
         JSON response with validation results including any warnings or errors
     """
     try:
         import json as json_module
+
         icon_config = json_module.loads(icon_config_json)
-        
+
         validation = bloodhound_api.custom_nodes.validate_icon_config(icon_config)
-        return json.dumps({
-            "message": "Icon validation completed",
-            "validation_result": validation,
-        })
+        return json.dumps(
+            {
+                "message": "Icon validation completed",
+                "validation_result": validation,
+            }
+        )
     except json_module.JSONDecodeError as e:
         return json.dumps({"error": f"Invalid JSON format: {str(e)}"})
     except Exception as e:
@@ -3483,8 +3588,9 @@ def validate_custom_node_icon(icon_config_json: str):
 
 
 # ===============================
-# ASSET GROUPS API TOOLS  
+# ASSET GROUPS API TOOLS
 # ===============================
+
 
 @mcp.tool()
 def list_asset_groups(
@@ -3493,12 +3599,12 @@ def list_asset_groups(
     tag: str = None,
     system_group: bool = None,
     member_count: int = None,
-    asset_group_id: int = None
+    asset_group_id: int = None,
 ):
     """
     List all asset isolation groups with optional filtering.
     Asset groups help organize and isolate sets of assets for security analysis.
-    
+
     Args:
         sort_by: Sort by field - 'name', 'tag', or 'member_count' (optional)
         name: Filter by asset group name (optional)
@@ -3506,7 +3612,7 @@ def list_asset_groups(
         system_group: Filter by system group status (optional)
         member_count: Filter by member count (optional)
         asset_group_id: Filter by specific asset group ID (optional)
-        
+
     Returns:
         JSON response with list of asset groups and their configurations
     """
@@ -3517,13 +3623,15 @@ def list_asset_groups(
             tag=tag,
             system_group=system_group,
             member_count=member_count,
-            asset_group_id=asset_group_id
+            asset_group_id=asset_group_id,
         )
         asset_groups = groups.get("data", {}).get("asset_groups", [])
-        return json.dumps({
-            "message": f"Successfully retrieved {len(asset_groups)} asset groups",
-            "asset_groups": asset_groups,
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved {len(asset_groups)} asset groups",
+                "asset_groups": asset_groups,
+            }
+        )
     except Exception as e:
         logger.error(f"Error listing asset groups: {e}")
         return json.dumps({"error": f"Failed to list asset groups: {str(e)}"})
@@ -3533,20 +3641,22 @@ def list_asset_groups(
 def create_asset_group(name: str, tag: str):
     """
     Create a new asset group for organizing and isolating assets.
-    
+
     Args:
         name: Name of the asset group
         tag: Tag for the asset group (used for identification and filtering)
-        
+
     Returns:
         JSON response with created asset group configuration
     """
     try:
         group = bloodhound_api.asset_groups.create_asset_group(name, tag)
-        return json.dumps({
-            "message": f"Successfully created asset group: {name}",
-            "asset_group": group.get("data", {}),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully created asset group: {name}",
+                "asset_group": group.get("data", {}),
+            }
+        )
     except Exception as e:
         logger.error(f"Error creating asset group: {e}")
         return json.dumps({"error": f"Failed to create asset group: {str(e)}"})
@@ -3556,66 +3666,78 @@ def create_asset_group(name: str, tag: str):
 def get_asset_group(asset_group_id: int):
     """
     Get details for a specific asset group by ID.
-    
+
     Args:
         asset_group_id: ID of the asset group to retrieve
-        
+
     Returns:
         JSON response with asset group configuration and details
     """
     try:
         group = bloodhound_api.asset_groups.get_asset_group(asset_group_id)
-        return json.dumps({
-            "message": f"Successfully retrieved asset group ID: {asset_group_id}",
-            "asset_group": group.get("data", {}),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved asset group ID: {asset_group_id}",
+                "asset_group": group.get("data", {}),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving asset group {asset_group_id}: {e}")
-        return json.dumps({"error": f"Failed to retrieve asset group {asset_group_id}: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to retrieve asset group {asset_group_id}: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def update_asset_group(asset_group_id: int, name: str):
     """
     Update an existing asset group's name.
-    
+
     Args:
         asset_group_id: ID of the asset group to update
         name: New name for the asset group
-        
+
     Returns:
         JSON response with updated asset group configuration
     """
     try:
         group = bloodhound_api.asset_groups.update_asset_group(asset_group_id, name)
-        return json.dumps({
-            "message": f"Successfully updated asset group ID: {asset_group_id}",
-            "asset_group": group.get("data", {}),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully updated asset group ID: {asset_group_id}",
+                "asset_group": group.get("data", {}),
+            }
+        )
     except Exception as e:
         logger.error(f"Error updating asset group {asset_group_id}: {e}")
-        return json.dumps({"error": f"Failed to update asset group {asset_group_id}: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to update asset group {asset_group_id}: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def delete_asset_group(asset_group_id: int):
     """
     Delete an asset group.
-    
+
     Args:
         asset_group_id: ID of the asset group to delete
-        
+
     Returns:
         JSON response confirming deletion
     """
     try:
         bloodhound_api.asset_groups.delete_asset_group(asset_group_id)
-        return json.dumps({
-            "message": f"Successfully deleted asset group ID: {asset_group_id}",
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully deleted asset group ID: {asset_group_id}",
+            }
+        )
     except Exception as e:
         logger.error(f"Error deleting asset group {asset_group_id}: {e}")
-        return json.dumps({"error": f"Failed to delete asset group {asset_group_id}: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to delete asset group {asset_group_id}: {str(e)}"}
+        )
 
 
 @mcp.tool()
@@ -3623,12 +3745,12 @@ def list_asset_group_collections(asset_group_id: int, skip: int = 0, limit: int 
     """
     List asset group collections (historical memberships).
     Collections represent snapshots of asset group membership over time.
-    
+
     Args:
         asset_group_id: ID of the asset group
         skip: Number of results to skip for pagination
         limit: Maximum number of results to return
-        
+
     Returns:
         JSON response with asset group collections
     """
@@ -3636,49 +3758,59 @@ def list_asset_group_collections(asset_group_id: int, skip: int = 0, limit: int 
         collections = bloodhound_api.asset_groups.list_asset_group_collections(
             asset_group_id, skip=skip, limit=limit
         )
-        return json.dumps({
-            "message": f"Successfully retrieved collections for asset group ID: {asset_group_id}",
-            "collections": collections.get("data", []),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved collections for asset group ID: {asset_group_id}",
+                "collections": collections.get("data", []),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving asset group collections: {e}")
-        return json.dumps({"error": f"Failed to retrieve asset group collections: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to retrieve asset group collections: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def get_asset_group_member_counts(asset_group_id: int):
     """
     Get member count statistics for an asset group, broken down by object kind.
-    
+
     Args:
         asset_group_id: ID of the asset group
-        
+
     Returns:
         JSON response with total count and counts by object kind
     """
     try:
-        counts = bloodhound_api.asset_groups.list_asset_group_member_counts(asset_group_id)
+        counts = bloodhound_api.asset_groups.list_asset_group_member_counts(
+            asset_group_id
+        )
         data = counts.get("data", {})
-        return json.dumps({
-            "message": f"Successfully retrieved member counts for asset group ID: {asset_group_id}",
-            "total_count": data.get("total_count", 0),
-            "counts_by_kind": data.get("counts", {}),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved member counts for asset group ID: {asset_group_id}",
+                "total_count": data.get("total_count", 0),
+                "counts_by_kind": data.get("counts", {}),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving asset group member counts: {e}")
-        return json.dumps({"error": f"Failed to retrieve asset group member counts: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to retrieve asset group member counts: {str(e)}"}
+        )
 
 
 @mcp.tool()
 def update_asset_group_selectors(asset_group_id: int, selectors_json: str):
     """
-    Update selectors for an asset group. Selectors define which objects 
+    Update selectors for an asset group. Selectors define which objects
     should be included in the asset group based on criteria.
-    
+
     Args:
         asset_group_id: ID of the asset group
         selectors_json: JSON string containing array of selector specifications
-                       
+
     Example selectors_json:
     [
         {
@@ -3687,51 +3819,57 @@ def update_asset_group_selectors(asset_group_id: int, selectors_json: str):
             "system_selector": false
         }
     ]
-    
+
     Returns:
         JSON response with updated asset group configuration
     """
     try:
         import json as json_module
+
         selectors = json_module.loads(selectors_json)
-        
+
         result = bloodhound_api.asset_groups.update_asset_group_selectors(
             asset_group_id, selectors
         )
-        return json.dumps({
-            "message": f"Successfully updated selectors for asset group ID: {asset_group_id}",
-            "asset_group": result.get("data", {}),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully updated selectors for asset group ID: {asset_group_id}",
+                "asset_group": result.get("data", {}),
+            }
+        )
     except json_module.JSONDecodeError as e:
         return json.dumps({"error": f"Invalid JSON format: {str(e)}"})
     except Exception as e:
         logger.error(f"Error updating asset group selectors: {e}")
-        return json.dumps({"error": f"Failed to update asset group selectors: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to update asset group selectors: {str(e)}"}
+        )
 
 
 # ===============================
 # ASSET GROUP TAGS API TOOLS
 # ===============================
 
+
 @mcp.tool()
 def list_asset_group_tags(
     sort_by: str = None,
-    name: str = None, 
+    name: str = None,
     tag: str = None,
     skip: int = 0,
-    limit: int = 100
+    limit: int = 100,
 ):
     """
     List asset group tags using the newer tags API.
     Asset group tags provide enhanced functionality over basic asset groups.
-    
+
     Args:
         sort_by: Sort by field (optional)
         name: Filter by tag name (optional)
         tag: Filter by tag value (optional)
         skip: Number of results to skip for pagination
         limit: Maximum number of results to return
-        
+
     Returns:
         JSON response with list of asset group tags
     """
@@ -3739,11 +3877,13 @@ def list_asset_group_tags(
         tags = bloodhound_api.asset_groups.list_asset_group_tags(
             sort_by=sort_by, name=name, tag=tag, skip=skip, limit=limit
         )
-        return json.dumps({
-            "message": f"Successfully retrieved asset group tags",
-            "asset_group_tags": tags.get("data", []),
-            "count": tags.get("count", 0),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved asset group tags",
+                "asset_group_tags": tags.get("data", []),
+                "count": tags.get("count", 0),
+            }
+        )
     except Exception as e:
         logger.error(f"Error listing asset group tags: {e}")
         return json.dumps({"error": f"Failed to list asset group tags: {str(e)}"})
@@ -3753,35 +3893,39 @@ def list_asset_group_tags(
 def create_asset_group_tag(name: str, tag: str):
     """
     Create a new asset group tag.
-    
+
     Args:
         name: Name of the asset group tag
         tag: Tag value
-        
+
     Returns:
         JSON response with created asset group tag
     """
     try:
         tag_obj = bloodhound_api.asset_groups.create_asset_group_tag(name, tag)
-        return json.dumps({
-            "message": f"Successfully created asset group tag: {name}",
-            "asset_group_tag": tag_obj.get("data", {}),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully created asset group tag: {name}",
+                "asset_group_tag": tag_obj.get("data", {}),
+            }
+        )
     except Exception as e:
         logger.error(f"Error creating asset group tag: {e}")
         return json.dumps({"error": f"Failed to create asset group tag: {str(e)}"})
 
 
 @mcp.tool()
-def get_asset_group_tag_members(asset_group_tag_id: int, skip: int = 0, limit: int = 100):
+def get_asset_group_tag_members(
+    asset_group_tag_id: int, skip: int = 0, limit: int = 100
+):
     """
     List members of a specific asset group tag.
-    
+
     Args:
         asset_group_tag_id: ID of the asset group tag
         skip: Number of results to skip for pagination
         limit: Maximum number of results to return
-        
+
     Returns:
         JSON response with list of members in the asset group tag
     """
@@ -3789,14 +3933,18 @@ def get_asset_group_tag_members(asset_group_tag_id: int, skip: int = 0, limit: i
         members = bloodhound_api.asset_groups.list_asset_group_tag_members(
             asset_group_tag_id, skip=skip, limit=limit
         )
-        return json.dumps({
-            "message": f"Successfully retrieved members for asset group tag ID: {asset_group_tag_id}",
-            "members": members.get("data", []),
-            "count": members.get("count", 0),
-        })
+        return json.dumps(
+            {
+                "message": f"Successfully retrieved members for asset group tag ID: {asset_group_tag_id}",
+                "members": members.get("data", []),
+                "count": members.get("count", 0),
+            }
+        )
     except Exception as e:
         logger.error(f"Error retrieving asset group tag members: {e}")
-        return json.dumps({"error": f"Failed to retrieve asset group tag members: {str(e)}"})
+        return json.dumps(
+            {"error": f"Failed to retrieve asset group tag members: {str(e)}"}
+        )
 
 
 def _test_bloodhound_connection():

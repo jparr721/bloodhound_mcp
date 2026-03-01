@@ -21,4 +21,6 @@ dev = [
     "pytest-mock>=3.14.1",
     "requests-mock>=1.12.1",
     "responses>=0.25.7",
+    "ruff>=0.15.4",
+    "ty>=0.0.19",
 ]
