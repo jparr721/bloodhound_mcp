@@ -129,6 +129,54 @@ For more information on OpenGraph please see the below resources
 3. Replace `/path/to/your/bloodhound-mcp` with the actual path to your installation
 4. Restart Claude Desktop
 
+### HTTP Transport (Remote / Docker Deployment)
+
+The server can also run as a standalone HTTP service instead of a stdio subprocess, enabling integration with remote MCP clients like AFM.
+
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_TRANSPORT` | `stdio` | Transport mode: `stdio`, `http` (streamable-http), or `sse` |
+| `MCP_HOST` | `0.0.0.0` | Bind address for HTTP/SSE mode |
+| `MCP_PORT` | `8000` | Port for HTTP/SSE mode |
+
+**Run locally with HTTP transport:**
+```bash
+MCP_TRANSPORT=http MCP_PORT=8000 \
+BLOODHOUND_DOMAIN=your-bloodhound.domain.com \
+BLOODHOUND_PORT=8080 BLOODHOUND_SCHEME=http \
+BLOODHOUND_TOKEN_ID=<id> BLOODHOUND_TOKEN_KEY=<key> \
+uv run main.py
+```
+
+The MCP endpoint will be available at `http://localhost:8000/mcp`.
+
+**Run with Docker:**
+```bash
+docker build -t bloodhound-mcp .
+
+docker run -p 8000:8000 \
+  -e BLOODHOUND_DOMAIN=your-bloodhound.domain.com \
+  -e BLOODHOUND_PORT=8080 \
+  -e BLOODHOUND_SCHEME=http \
+  -e BLOODHOUND_TOKEN_ID=<id> \
+  -e BLOODHOUND_TOKEN_KEY=<key> \
+  bloodhound-mcp
+```
+
+If BloodHound is running in Docker on the same network, use Docker networking:
+```bash
+docker run -p 8000:8000 \
+  --network bloodhound_default \
+  -e BLOODHOUND_DOMAIN=bloodhound \
+  -e BLOODHOUND_PORT=8080 \
+  -e BLOODHOUND_SCHEME=http \
+  -e BLOODHOUND_TOKEN_ID=<id> \
+  -e BLOODHOUND_TOKEN_KEY=<key> \
+  bloodhound-mcp
+```
+
 ### BloodHound API Token Setup
 
 1. Log into your BloodHound CE instance

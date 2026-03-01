@@ -3799,10 +3799,8 @@ def get_asset_group_tag_members(asset_group_tag_id: int, skip: int = 0, limit: i
         return json.dumps({"error": f"Failed to retrieve asset group tag members: {str(e)}"})
 
 
-# main function to start the server
-async def main():
-    """Main function to start the server"""
-    # Test connection to Bloodhound API
+def _test_bloodhound_connection():
+    """Test connection to Bloodhound API and log the result."""
     try:
         version_info = bloodhound_api.test_connection()
         if version_info:
@@ -3814,12 +3812,32 @@ async def main():
     except Exception as e:
         logger.error(f"Error connecting to Bloodhound API: {e}")
 
-    # Run the MCP server
+
+# main function to start the server
+async def main():
+    """Main function to start the server"""
+    _test_bloodhound_connection()
     await mcp.run_stdio_async()
 
 
 if __name__ == "__main__":
     import asyncio
-    parser = argparse.ArgumentParser(description="Bloodhound CE MCP Server")
-    args = parser.parse_args()
-    asyncio.run(main())
+
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+
+    if transport in ("http", "streamable-http"):
+        _test_bloodhound_connection()
+        host = os.environ.get("MCP_HOST", "0.0.0.0")
+        port = int(os.environ.get("MCP_PORT", "8000"))
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.run(transport="streamable-http")
+    elif transport == "sse":
+        _test_bloodhound_connection()
+        host = os.environ.get("MCP_HOST", "0.0.0.0")
+        port = int(os.environ.get("MCP_PORT", "8000"))
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.run(transport="sse")
+    else:
+        asyncio.run(main())
